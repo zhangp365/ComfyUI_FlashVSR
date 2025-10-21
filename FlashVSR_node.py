@@ -41,23 +41,25 @@ class FlashVSR_SM_Model(io.ComfyNode):
                 io.Combo.Input("proj_pt",options= ["none"] + [i for i in folder_paths.get_filename_list("FlashVSR") if "proj" in i.lower()]),
                 io.Combo.Input("vae",options= ["none"] + folder_paths.get_filename_list("vae") ),
                 io.Combo.Input("tcd_encoder",options= ["none"] + [i for i in folder_paths.get_filename_list("FlashVSR") if "tcd" in i.lower()] ),
+                io.Combo.Input("emb_pt",options= ["none"] + [i for i in folder_paths.get_filename_list("FlashVSR") if "prompt" in i.lower()]),
             ],
             outputs=[
                 io.Custom("FlashVSR_SM_Model").Output(),
                 ],
             )
     @classmethod
-    def execute(cls, dit,proj_pt,vae,tcd_encoder) -> io.NodeOutput:
+    def execute(cls, dit,proj_pt,vae,tcd_encoder,emb_pt) -> io.NodeOutput:
         dit_path=folder_paths.get_full_path("FlashVSR", dit) if dit != "none" else None
         proj_pt_path=folder_paths.get_full_path("FlashVSR", proj_pt) if proj_pt != "none" else None
         vae_path=folder_paths.get_full_path("vae", vae) if vae != "none" else None
         tcd_encoder_path=folder_paths.get_full_path("FlashVSR", tcd_encoder) if tcd_encoder != "none" else None
+        prompt_path=folder_paths.get_full_path("FlashVSR", emb_pt) if emb_pt != "none" else None
         assert dit_path is not None and proj_pt is not None , "Please select the Sdit,proj_pt,checkpoint file"
         assert vae_path is not None or tcd_encoder_path is not None , "Please select the Sdit,proj_pt,checkpoint file"
         if vae_path is None and tcd_encoder_path is not None:
-            model=init_pipeline_tiny(proj_pt_path,dit_path, tcd_encoder_path, device="cuda")
+            model=init_pipeline_tiny(proj_pt_path,dit_path, tcd_encoder_path, prompt_path, device="cuda")
         else:
-            model=init_pipeline(proj_pt_path,dit_path, vae_path, device="cuda")
+            model=init_pipeline(proj_pt_path,dit_path, vae_path, prompt_path, device="cuda")
         return io.NodeOutput(model)
     
 
@@ -71,7 +73,6 @@ class FlashVSR_SM_KSampler(io.ComfyNode):
             inputs=[
                 io.Custom("FlashVSR_SM_Model").Input("model"),
                 io.Image.Input("image"),
-                io.Combo.Input("emb_pt",options= ["none"] + [i for i in folder_paths.get_filename_list("FlashVSR") if "prompt" in i.lower()]),
                 io.Int.Input("seed", default=0, min=0, max=MAX_SEED),
                 io.Int.Input("scale", default=4, min=1, max=4),
                 io.Float.Input("kv_ratio", default=3.5, min=0.0, max=10.0, step=0.1, round=0.01,),
@@ -88,15 +89,13 @@ class FlashVSR_SM_KSampler(io.ComfyNode):
             ],
         )
     @classmethod
-    def execute(cls, model,image,emb_pt,seed,scale,kv_ratio,local_range, steps, cfg,sparse_ratio,full_tiled,color_fix) -> io.NodeOutput:
-        prompt_path=folder_paths.get_full_path("FlashVSR", emb_pt) if emb_pt != "none" else None
-        assert prompt_path is not None  , "Please select the emb"
+    def execute(cls, model,image,seed,scale,kv_ratio,local_range, steps, cfg,sparse_ratio,full_tiled,color_fix) -> io.NodeOutput:
         if hasattr(model,"TCDecoder") :
             print("infer tiny mode")
-            images=run_inference_tiny(model,prompt_path,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix )
+            images=run_inference_tiny(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix )
         else:
             print("infer full mode")
-            images=run_inference(model,prompt_path,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,full_tiled,color_fix )
+            images=run_inference(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,full_tiled,color_fix )
      
         return io.NodeOutput(images.float())
 

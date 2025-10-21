@@ -186,7 +186,7 @@ def prepare_input_tensor(path: str, scale: float = 4,fps=30, dtype=torch.bfloat1
         raise ValueError(f"Unsupported input: {path}")
    
 
-def init_pipeline_tiny(LQ_proj_in_path = "./FlashVSR/LQ_proj_in.ckpt",ckpt_path="./FlashVSR/diffusion_pytorch_model_streaming_dmd.safetensors",TCDecoder_path="./FlashVSR/TCDecoder.ckpt",device="cuda"):
+def init_pipeline_tiny(LQ_proj_in_path = "./FlashVSR/LQ_proj_in.ckpt",ckpt_path="./FlashVSR/diffusion_pytorch_model_streaming_dmd.safetensors",TCDecoder_path="./FlashVSR/TCDecoder.ckpt", prompt_path: str = None, device="cuda"):
     #print(torch.cuda.current_device(), torch.cuda.get_device_name(torch.cuda.current_device()))
     mm = ModelManager(torch_dtype=torch.bfloat16, device="cpu")
     mm.load_models([ckpt_path,])
@@ -202,13 +202,16 @@ def init_pipeline_tiny(LQ_proj_in_path = "./FlashVSR/LQ_proj_in.ckpt",ckpt_path=
     mis = pipe.TCDecoder.load_state_dict(torch.load(TCDecoder_path,weights_only=False,), strict=False)
     print(mis)
 
-    # pipe.to('cuda'); pipe.enable_vram_management(num_persistent_param_in_dit=None)
-    # pipe.init_cross_kv(); pipe.load_models_to_device(["dit","vae"])
+    pipe.to('cuda')
+    pipe.enable_vram_management(num_persistent_param_in_dit=None)
+    if prompt_path is not None:
+        pipe.init_cross_kv(prompt_path)
+    
     return pipe
 
-def run_inference_tiny(pipe,prompt_path,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_scale=1.0,sparse_ratio=2.0,color_fix=True,dtype=torch.bfloat16,device="cuda"):
-    pipe.to('cuda'); pipe.enable_vram_management(num_persistent_param_in_dit=None)
-    pipe.init_cross_kv(prompt_path); pipe.load_models_to_device(["dit","vae"])
+def run_inference_tiny(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_scale=1.0,sparse_ratio=2.0,color_fix=True,dtype=torch.bfloat16,device="cuda"):
+    pipe.to('cuda')
+    pipe.load_models_to_device(["dit","vae"])
 
 
     torch.cuda.empty_cache(); torch.cuda.ipc_collect()
