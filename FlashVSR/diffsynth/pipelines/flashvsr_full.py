@@ -433,7 +433,7 @@ class FlashVSRFullPipeline(BasePipeline):
 
             latents = torch.cat(latents_total, dim=2)
             self.dit.to("cpu")
-            torch.cuda.empty_cache
+            torch.cuda.empty_cache()
             # Decode
             frames = self.decode_video(latents, **tiler_kwargs)
 
