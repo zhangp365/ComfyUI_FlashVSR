@@ -207,6 +207,8 @@ def run_inference(pipe,prompt_path,input,seed,scale,kv_ratio=3.0,local_range=9,s
         kv_ratio=kv_ratio,
         local_range=local_range, # Recommended: 9 or 11. local_range=9 → sharper details; 11 → more stable results.
         color_fix = color_fix,
+        tile_size=(227, 227),
+        tile_stride=(144, 128),           
     )
     #video = tensor2video(video)
     #save_video(video, os.path.join(RESULT_ROOT, f"FlashVSR_Full_{name.split('.')[0]}_seed{seed}.mp4"), fps=fps, quality=6)
