@@ -82,6 +82,8 @@ class FlashVSR_SM_KSampler(io.ComfyNode):
                 io.Float.Input("sparse_ratio", default=2.0, min=0.0, max=10.0, step=0.1,display_mode=io.NumberDisplay.slider), 
                 io.Boolean.Input("full_tiled", default=True),
                 io.Boolean.Input("color_fix", default=True),
+                io.String.Input("tile_size", default="227,227"),
+                io.String.Input("tile_stride", default="144,128"),
 
             ],
             outputs=[
@@ -89,13 +91,16 @@ class FlashVSR_SM_KSampler(io.ComfyNode):
             ],
         )
     @classmethod
-    def execute(cls, model,image,seed,scale,kv_ratio,local_range, steps, cfg,sparse_ratio,full_tiled,color_fix) -> io.NodeOutput:
+    def execute(cls, model,image,seed,scale,kv_ratio,local_range, steps, cfg,sparse_ratio,full_tiled,color_fix,tile_size,tile_stride) -> io.NodeOutput:
+        tile_size_tuple = tuple(map(int, tile_size.split(',')))
+        tile_stride_tuple = tuple(map(int, tile_stride.split(',')))
+        
         if hasattr(model,"TCDecoder") :
             print("infer tiny mode")
-            images=run_inference_tiny(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix )
+            images=run_inference_tiny(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix,tile_size_tuple,tile_stride_tuple )
         else:
             print("infer full mode")
-            images=run_inference(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,full_tiled,color_fix )
+            images=run_inference(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,full_tiled,color_fix,tile_size_tuple,tile_stride_tuple )
      
         return io.NodeOutput(images.float())
 

@@ -209,7 +209,7 @@ def init_pipeline_tiny(LQ_proj_in_path = "./FlashVSR/LQ_proj_in.ckpt",ckpt_path=
     
     return pipe
 
-def run_inference_tiny(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_scale=1.0,sparse_ratio=2.0,color_fix=True,dtype=torch.bfloat16,device="cuda"):
+def run_inference_tiny(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_scale=1.0,sparse_ratio=2.0,color_fix=True,tile_size=(227, 227),tile_stride=(144, 128),dtype=torch.bfloat16,device="cuda"):
     pipe.to('cuda')
     pipe.load_models_to_device(["dit","vae"])
 
@@ -225,6 +225,8 @@ def run_inference_tiny(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,c
         kv_ratio=kv_ratio,
         local_range=local_range,  # Recommended: 9 or 11. local_range=9 → sharper details; 11 → more stable results.
         color_fix = color_fix,
+        tile_size=tile_size,
+        tile_stride=tile_stride,
     )
     #video = tensor2video(video)
     print("Done.")
