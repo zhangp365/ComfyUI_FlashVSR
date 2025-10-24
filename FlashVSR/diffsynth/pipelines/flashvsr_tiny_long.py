@@ -150,7 +150,7 @@ class TorchColorCorrectorWavelet(nn.Module):
 # -----------------------------
 # 简化版 Pipeline（仅 dit + vae）
 # -----------------------------
-class FlashVSRFullPipeline(BasePipeline):
+class FlashVSRTinyLongPipeline(BasePipeline):
 
     def __init__(self, device="cuda", torch_dtype=torch.float16):
         super().__init__(device=device, torch_dtype=torch_dtype)
@@ -163,8 +163,7 @@ class FlashVSRFullPipeline(BasePipeline):
         self.use_unified_sequence_parallel = False
         self.prompt_emb_posi = None
         self.ColorCorrector = TorchColorCorrectorWavelet(levels=5)
-
-
+        self.long_mode=True
         print(r"""
 ███████╗██╗      █████╗ ███████╗██╗  ██╗██╗   ██╗███████╗█████╗
 ██╔════╝██║     ██╔══██╗██╔════╝██║  ██║██║   ██║██╔════╝██╔══██╗
@@ -172,7 +171,7 @@ class FlashVSRFullPipeline(BasePipeline):
 ██╔══╝  ██║     ██╔══██║╚════██║██╔══██║ ╚████╔╝ ╚════██║██╔═██║
 ██║     ███████╗██║  ██║███████║██║  ██║  ╚██╔╝  ███████║██║  ██║
 ╚═╝     ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
-                          ⚡FlashVSR
+                         ⚡FlashVSR
 """)
 
     def enable_vram_management(self, num_persistent_param_in_dit=None):
@@ -205,27 +204,6 @@ class FlashVSRFullPipeline(BasePipeline):
                 computation_device=self.device,
             ),
         )
-        dtype = next(iter(self.vae.parameters())).dtype
-        enable_vram_management(
-            self.vae,
-            module_map={
-                torch.nn.Linear: AutoWrappedLinear,
-                torch.nn.Conv2d: AutoWrappedModule,
-                RMS_norm: AutoWrappedModule,
-                CausalConv3d: AutoWrappedModule,
-                Upsample: AutoWrappedModule,
-                torch.nn.SiLU: AutoWrappedModule,
-                torch.nn.Dropout: AutoWrappedModule,
-            },
-            module_config=dict(
-                offload_dtype=dtype,
-                offload_device="cpu",
-                onload_dtype=dtype,
-                onload_device=self.device,
-                computation_dtype=self.torch_dtype,
-                computation_device=self.device,
-            ),
-        )
         self.enable_cpu_offload()
 
     def fetch_models(self, model_manager: ModelManager):
@@ -236,7 +214,7 @@ class FlashVSRFullPipeline(BasePipeline):
     def from_model_manager(model_manager: ModelManager, torch_dtype=None, device=None, use_usp=False):
         if device is None: device = model_manager.device
         if torch_dtype is None: torch_dtype = model_manager.torch_dtype
-        pipe = FlashVSRFullPipeline(device=device, torch_dtype=torch_dtype)
+        pipe = FlashVSRTinyLongPipeline(device=device, torch_dtype=torch_dtype)
         pipe.fetch_models(model_manager)
         # 可选：统一序列并行入口（此处默认关闭）
         pipe.use_unified_sequence_parallel = False
@@ -252,7 +230,6 @@ class FlashVSRFullPipeline(BasePipeline):
         self,
         prompt_path = "../../examples/WanVSR/prompt_tensor/posi_prompt.pth",
         context_tensor: Optional[torch.Tensor] = None,
-        
     ):
         self.load_models_to_device(["dit"])
         """
@@ -260,6 +237,7 @@ class FlashVSRFullPipeline(BasePipeline):
         必须在 __call__ 前显式调用一次。
         """
         #prompt_path = "../../examples/WanVSR/prompt_tensor/posi_prompt.pth"
+
         if self.dit is None:
             raise RuntimeError("请先通过 fetch_models / from_model_manager 初始化 self.dit")
 
@@ -271,7 +249,7 @@ class FlashVSRFullPipeline(BasePipeline):
             ctx = context_tensor
 
         ctx = ctx.to(dtype=self.torch_dtype, device=self.device)
-        #print("ctx:shape",ctx.shape) #ctx:shape torch.Size([1, 512, 4096])
+
         if self.prompt_emb_posi is None:
             self.prompt_emb_posi = {}
         self.prompt_emb_posi['context'] = ctx
@@ -319,7 +297,7 @@ class FlashVSRFullPipeline(BasePipeline):
         tile_size=(60, 104),
         tile_stride=(30, 52),
         tea_cache_l1_thresh=None,
-        tea_cache_model_id="Wan2.1-T2V-1.3B",
+        tea_cache_model_id="Wan2.1-T2V-14B",
         progress_bar_cmd=tqdm,
         progress_bar_st=None,
         LQ_video=None,
@@ -329,6 +307,8 @@ class FlashVSRFullPipeline(BasePipeline):
         kv_ratio=3.0,
         local_range = 9,
         color_fix = True,
+        pad_first_frame=False,
+        fix_method="wavelet",
     ):
         # 只接受 cfg=1.0（与原代码一致）
         assert cfg_scale == 1.0, "cfg_scale must be 1.0"
@@ -342,6 +322,8 @@ class FlashVSRFullPipeline(BasePipeline):
                 "    pipe.init_cross_kv(context_tensor=your_context_tensor)"
             )
 
+        # 尺寸修正
+        height, width = self.check_resize_height_width(height, width)
         if num_frames % 4 != 1:
             num_frames = (num_frames + 2) // 4 * 4 + 1
             print(f"Only `num_frames % 4 != 1` is acceptable. We round it up to {num_frames}.")
@@ -364,15 +346,13 @@ class FlashVSRFullPipeline(BasePipeline):
         if hasattr(self.dit, "LQ_proj_in"):
             self.dit.LQ_proj_in.clear_cache()
 
-
-        latents_total = []
-        self.vae.clear_cache()
+        self.TCDecoder.clean_mem()
+        LQ_pre_idx = 0
+        LQ_cur_idx = 0
+        frames_total = []
 
         with torch.no_grad():
             for cur_process_idx in tqdm(range(process_total_num)):
-                torch.cuda.synchronize()
-                dit_time_start = time.time()
-
                 if cur_process_idx == 0:
                     pre_cache_k = [None] * len(self.dit.blocks)
                     pre_cache_v = [None] * len(self.dit.blocks)
@@ -380,7 +360,7 @@ class FlashVSRFullPipeline(BasePipeline):
                     inner_loop_num = 7
                     for inner_idx in range(inner_loop_num):
                         cur = self.denoising_model().LQ_proj_in.stream_forward(
-                            LQ_video[:, :, max(0, inner_idx*4-3):(inner_idx+1)*4-3, :, :]
+                            LQ_video[:, :, max(0, inner_idx*4-3):(inner_idx+1)*4-3, :, :].to(self.device)
                         ) if LQ_video is not None else None
                         if cur is None:
                             continue
@@ -389,13 +369,14 @@ class FlashVSRFullPipeline(BasePipeline):
                         else:
                             for layer_idx in range(len(LQ_latents)):
                                 LQ_latents[layer_idx] = torch.cat([LQ_latents[layer_idx], cur[layer_idx]], dim=1)
+                    LQ_cur_idx = (inner_loop_num-1)*4-3
                     cur_latents = latents[:, :, :6, :, :]
                 else:
                     LQ_latents = None
                     inner_loop_num = 2
                     for inner_idx in range(inner_loop_num):
                         cur = self.denoising_model().LQ_proj_in.stream_forward(
-                            LQ_video[:, :, cur_process_idx*8+17+inner_idx*4:cur_process_idx*8+21+inner_idx*4, :, :]
+                            LQ_video[:, :, cur_process_idx*8+17+inner_idx*4:cur_process_idx*8+21+inner_idx*4, :, :].to(self.device)
                         ) if LQ_video is not None else None
                         if cur is None:
                             continue
@@ -404,10 +385,10 @@ class FlashVSRFullPipeline(BasePipeline):
                         else:
                             for layer_idx in range(len(LQ_latents)):
                                 LQ_latents[layer_idx] = torch.cat([LQ_latents[layer_idx], cur[layer_idx]], dim=1)
+                    LQ_cur_idx = cur_process_idx*8+21+(inner_loop_num-2)*4
                     cur_latents = latents[:, :, 4+cur_process_idx*2:6+cur_process_idx*2, :, :]
 
                 # 推理（无 motion_controller / vace）
-                #print(cur_latents.shape,"cur_latents") #torch.Size([1, 16, 6, 384, 640]) scale 4  cur_latents orch.Size([1, 16, 6, 96, 160]) cur_latents scale 1
                 noise_pred_posi, pre_cache_k, pre_cache_v = model_fn_wan_video(
                     self.dit,
                     x=cur_latents,
@@ -430,29 +411,37 @@ class FlashVSRFullPipeline(BasePipeline):
 
                 # 更新 latent
                 cur_latents = cur_latents - noise_pred_posi
-                latents_total.append(cur_latents)
+                # Decode
+                cur_LQ_frame = LQ_video[:,:,LQ_pre_idx:LQ_cur_idx,:,:].to(self.device)
+                cur_frames = self.TCDecoder.decode_video(cur_latents.transpose(1, 2),parallel=False, show_progress_bar=False, cond=LQ_video[:,:,LQ_pre_idx:LQ_cur_idx,:,:].to(self.device)).transpose(1, 2).mul_(2).sub_(1)
 
-            latents = torch.cat(latents_total, dim=2)
-            #self.dit.to("cpu")
-            #torch.cuda.empty_cache()
-            # Decode
-            #frames = self.decode_video(latents, **tiler_kwargs)
+                # 颜色校正（wavelet）
+                try:
+                    if color_fix:
+                        if pad_first_frame: # 加帧
+                            cur_frames = dup_first_frame_1cthw_simple(cur_frames)
+                            cur_LQ_frame=dup_first_frame_1cthw_simple(cur_LQ_frame)
+                        cur_frames = self.ColorCorrector(
+                            cur_frames.to(device=self.device),
+                            cur_LQ_frame,
+                            clip_range=(-1, 1),
+                            chunk_size=None,
+                            method=fix_method,
+                        )
+                        if pad_first_frame: #减帧
+                            cur_frames = cur_frames[:, :, 1:, :, :] # remove first frame
+                except:
+                    pass
 
-            # 颜色校正（wavelet）
-            # try:
-            #     if color_fix:
-            #         frames = self.ColorCorrector(
-            #             frames.to(device=LQ_video.device),
-            #             LQ_video[:, :, :frames.shape[2], :, :],
-            #             clip_range=(-1, 1),
-            #             chunk_size=16,
-            #             method='adain'
-            #         )
-            # except:
-            #     pass
-                
-        return latents #frames[0]
+                frames_total.append(cur_frames.to('cpu'))
+                LQ_pre_idx = LQ_cur_idx
 
+            frames = torch.cat(frames_total, dim=2)
+
+        return frames[0]
+
+def dup_first_frame_1cthw_simple(video_tensor):
+    return torch.cat([video_tensor[:, :, :1], video_tensor], dim=2)
 
 # -----------------------------
 # TeaCache（保留原逻辑；此处默认不启用）
