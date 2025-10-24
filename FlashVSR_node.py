@@ -111,7 +111,7 @@ class FlashVSR_SM_KSampler(io.ComfyNode):
                 images=run_inference_tiny_long(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix,fix_method,split_num)
             else:
                 print("infer tiny mode")
-                images=run_inference_tiny(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix,fix_method,split_num )
+                images=run_inference_tiny(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,color_fix,fix_method,split_num,tile_size,tile_stride )
         else:
             print("infer full mode")
             images=run_inference(model,image,seed,scale,kv_ratio,local_range,steps,cfg,sparse_ratio,full_tiled,color_fix,fix_method,split_num,tile_size,tile_stride )

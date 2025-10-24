@@ -59,7 +59,7 @@ def is_video(path):
 def pil_to_tensor_neg1_1(img: Image.Image, dtype=torch.bfloat16, device='cuda'):
     t = torch.from_numpy(np.asarray(img, np.uint8)).to(device=device, dtype=torch.float32)  # HWC
     t = t.permute(2,0,1) / 255.0 * 2.0 - 1.0                                              # CHW in [-1,1]
-    return t.to(dtype=dtype)
+    return t.to(dtype)
 
 def save_video(frames, save_path, fps=30, quality=5):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -248,7 +248,7 @@ def init_pipeline_tiny(prompt_path,LQ_proj_in_path = "./FlashVSR/LQ_proj_in.ckpt
     pipe.init_cross_kv(prompt_path); pipe.load_models_to_device(["dit","vae"])
     return pipe
 
-def run_inference_tiny(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_scale=1.0,sparse_ratio=2.0,color_fix=True,fix_method="wavelet",split_num=81,dtype=torch.bfloat16,device="cuda", save_vodeo_=False,tile_size=(227, 227),tile_stride=(144, 128)):
+def run_inference_tiny(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_scale=1.0,sparse_ratio=2.0,color_fix=True,fix_method="wavelet",split_num=81,tile_size=(227, 227),tile_stride=(144, 128),dtype=torch.bfloat16,device="cuda", save_vodeo_=False):
     pipe.to('cuda')
 
     pad_first_frame = True  if "wavelet"== fix_method and color_fix else False
