@@ -129,6 +129,10 @@ def tensor2pillist(tensor_in):
 def prepare_input_tensor(path, scale: int = 4,fps=30,dtype=torch.bfloat16, device='cuda'):
     if isinstance(path,torch.Tensor):
         total,h0,w0,_ = path.shape
+        if total == 1:
+            print("got image,repeating to 25 frames")
+            path = path.repeat(25, 1, 1, 1) 
+            total=25
         sW, sH, tW, tH = compute_scaled_and_target_dims(w0, h0, scale=scale, multiple=128)
         pil_list=tensor2pillist(path)
         idx = list(range(total)) + [total - 1] * 4
