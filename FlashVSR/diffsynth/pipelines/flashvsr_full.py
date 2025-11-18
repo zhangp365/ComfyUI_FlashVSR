@@ -17,7 +17,7 @@ from ..models.wan_video_dit import WanModel, RMSNorm, sinusoidal_embedding_1d
 from ..models.wan_video_vae import WanVideoVAE, RMS_norm, CausalConv3d, Upsample
 from ..schedulers.flow_match import FlowMatchScheduler
 from .base import BasePipeline
-
+from diffusers import AutoencoderKLWan
 
 # -----------------------------
 # 基础工具：ADAIN 所需的统计量（保留以备需要；管线默认用 wavelet）
@@ -334,7 +334,23 @@ class FlashVSRFullPipeline(BasePipeline):
                 
                 frames=self.VAE.decode(latents.squeeze(0))
         else:
-            frames = self.vae.decode(latents, device=self.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)
+            if isinstance(self.vae,AutoencoderKLWan) :
+                latents_mean = (
+                torch.tensor(self.vae.config.latents_mean)
+                    .view(1, self.vae.config.z_dim, 1, 1, 1)
+                    .to(latents.device, latents.dtype)
+                    )
+                latents_std = 1.0 / torch.tensor(self.vae.config.latents_std).view(1, self.vae.config.z_dim, 1, 1, 1).to(
+                        latents.device, latents.dtype
+                    )
+                latents = latents / latents_std + latents_mean
+                if tiled:
+                    self.vae.enable_tiling()#tile_sample_min_height=34,tile_sample_min_width=34,tile_sample_stride_height=18,tile_sample_stride_width=16
+                else:
+                    self.vae.disable_tiling()
+                frames=self.vae.decode(latents,return_dict=False)[0] #vae: torch.Size([1, 3, 77, 1024, 768])
+            else:
+                frames = self.vae.decode(latents, device=self.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)
         return frames
 
     @torch.no_grad()
