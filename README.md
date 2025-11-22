@@ -1,9 +1,11 @@
 # ComfyUI_FlashVSR
 [FlashVSR](https://github.com/OpenImagingLab/FlashVSR): Towards Real-Time Diffusion-Based Streaming Video Super-Resolution,this node ,you can use it in comfyUI
 
+
 # Tips
+* 11/22 update 增加帧数pad代码 支持任意帧数输入不被裁切
 * vae 现在支持safetensor格式，也就是diffuser模型的vae  
-* 修复一个bug（full 1.1），上传一个简易的window环境的分割bat，注意，输入帧只有在满足“8n-3”时，才不会被剪裁帧，比如77、85....
+* 修复一个bug（full 1.1），上传一个简易的window环境的分割bat，
 * 更新适配1.1版本的新模型和代码,降低闪烁，提高保真度和稳定性
 * 新增lightx2v 加速vae decoder支持和Wan2.1-VAE-upscale2x 放大decoder支持，只是在full 模式下有效，light的加速模型目前只支持（lightvaew2_1.pth  #32.2M,taew2_1.pth,lighttaew2_1.pth） 三个文件
 *  满足部分网友需要超分单张图片的奇怪要求,默认输出25帧1秒的视频，详见示例，Block-Sparse-Attention 目前不支持5090的sm120架构，需要改一下Block-Sparse-Attention的源码来支持（目前还没适配）； 
@@ -13,9 +15,10 @@
 *  Block-Sparse-Attention 正确安装且能调用才是方法的完全体，当前的函数实现会更容易OOM,但是Block-Sparse-Attention轮子实在不好找，目前只有[CU128 toch2.7](https://github.com/lihaoyun6/ComfyUI-WanVideoWrapper)的，我提供的（[cu128，torch2.8，py311单体](https://pan.quark.cn/s/c9ba067c89bc)）或者自己编译  
 * tile关闭质量更高，需要VRam更高，corlor fix对于非模糊图片可以试试。
 *  Choice vae infer full mode ，encoder infer tiny mode 选择vae跑full模式 效果最好，tiny则是速度，数据集基于4倍训练，所以1 scale是不推荐的；  
-*  如果觉得项目有用，请给官方项目[FlashVSR](https://github.com/OpenImagingLab/FlashVSR) 打星；  
+*  如果觉得项目有用，请给官方项目[FlashVSR](https://github.com/OpenImagingLab/FlashVSR) 打星；
+*  11/22 update Add frame rate pad code to support any frame rate input without cropping； 
 * fix when vae is safetesors model's error
-* fix a bug（full 1.1），upload a simple split bat for the window environment，Note that input frames will only be cropped if they meet the "8n-3" criteria, such as 69,77, 85...  
+* fix a bug（full 1.1），upload a simple split bat for the window environment.
 * update to version v1.1 
 * add full mode [lightx2v vae encoder](https://huggingface.co/lightx2v/Autoencoders/tree/main) support（only lightvaew2_1.pth,taew2_1.pth,lighttaew2_1.pth） and [Wan2.1-VAE-upscale2x](https://huggingface.co/spacepxl/Wan2.1-VAE-upscale2x) support    
 * Satisfying the strange requirement of some netizens to VSR a ‘single image’, the default output is 25 frames per second of video, you can find it in the example. ‘Block-Sparse-Attention’ currently does not support the 5090 sm120 architecture and needs to modify the source code of ‘Block-Sparse-Attention’ to support it;  
