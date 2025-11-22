@@ -372,3 +372,40 @@ class Causal_LQ4x_Proj(nn.Module):
                 outputs.append(self.linear_layers[i](out_x))
             self.clip_idx += 1
             return outputs
+        
+def calculate_frame_adjustment_simple(original_frames):
+    input_frames = original_frames
+    
+    # 持续增加输入帧数直到满足输出要求
+    while True:
+        output_frames = calculate_output_frames_with_padding(input_frames)
+        
+        if output_frames >= original_frames:
+            break
+        input_frames += 1
+    
+    frames_to_add = input_frames + 4 - original_frames
+    frames_to_remove = output_frames - original_frames
+    
+    return {
+        'required_input_frames': input_frames,
+        'frames_to_add': frames_to_add,
+        'expected_output_frames': output_frames,
+        'frames_to_remove': frames_to_remove,
+        'is_sufficient': True
+    }
+
+def calculate_output_frames_with_padding(input_frames):
+    start_value = 5  # 8*1 - 3
+    interval = 8
+    if input_frames < start_value:
+        return start_value
+    group_index = (input_frames - start_value) // interval
+    group_min = start_value + group_index * interval
+    group_max = group_min + interval - 1
+    if group_min <= input_frames <= group_max:
+        return group_min
+    return group_min + interval
+
+def largest_8n1_leq(n):  # 8n+1
+    return 0 if n < 1 else ((n - 1)//8)*8 + 1
