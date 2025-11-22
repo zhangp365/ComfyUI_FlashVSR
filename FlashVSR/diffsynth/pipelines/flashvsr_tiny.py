@@ -17,7 +17,7 @@ from ..models.wan_video_dit import WanModel, RMSNorm, sinusoidal_embedding_1d
 from ..models.wan_video_vae import WanVideoVAE, RMS_norm, CausalConv3d, Upsample
 from ..schedulers.flow_match import FlowMatchScheduler
 from .base import BasePipeline
-
+from safetensors.torch import load_file
 
 # -----------------------------
 # 基础工具：ADAIN 所需的统计量（保留以备需要；管线默认用 wavelet）
@@ -246,7 +246,7 @@ class FlashVSRTinyPipeline(BasePipeline):
         if context_tensor is None:
             if prompt_path is None:
                 raise ValueError("init_cross_kv: 需要提供 prompt_path 或 context_tensor 其一")
-            ctx = torch.load(prompt_path, map_location=self.device,weights_only=False,)
+            ctx = torch.load(prompt_path, map_location=self.device,weights_only=False,) if not prompt_path.endswith('.safetensors') else load_file(prompt_path)
         else:
             ctx = context_tensor
 
