@@ -12,6 +12,7 @@ import folder_paths
 from ...diffsynth import ModelManager, FlashVSRTinyLongPipeline
 from .utils.utils import Causal_LQ4x_Proj
 from .utils.TCDecoder import build_tcdecoder
+from .utils.utils import calculate_frame_adjustment_simple
 
 def tensor2video(frames):
     frames = rearrange(frames, "C T H W -> T H W C")
@@ -117,12 +118,20 @@ def tensor2pillist(tensor_in):
     return img_list
 
 def prepare_input_tensor(path: str, scale: float = 4,fps=30, dtype=torch.bfloat16, device='cuda'):
+    pad_frames=0
     if isinstance(path,torch.Tensor):
         total,h0,w0,_ = path.shape
         if total == 1:
             print("got image,repeating to 25 frames")
             path = path.repeat(25, 1, 1, 1)
             total=25
+        adjustment = calculate_frame_adjustment_simple(total)
+        pad_frames=adjustment['frames_to_remove']
+        print(adjustment['frames_to_add'])
+        if adjustment['frames_to_add'] > 0:
+            additional_frames = path[-1:].repeat(adjustment['frames_to_add'], 1, 1, 1)
+            path = torch.cat([path, additional_frames], dim=0)
+            total = path.shape[0]
         sW, sH, tW, tH = compute_scaled_and_target_dims(w0, h0, scale=scale, multiple=128)
         pil_list=tensor2pillist(path)
 
@@ -137,7 +146,7 @@ def prepare_input_tensor(path: str, scale: float = 4,fps=30, dtype=torch.bfloat1
             frames.append(pil_to_tensor_neg1_1(img_out, dtype, device))
         frames = torch.stack(frames, 0).permute(1,0,2,3).unsqueeze(0)  # 1 C F H W  
         torch.cuda.empty_cache()
-        return frames, tH, tW, F, fps
+        return frames, tH, tW, F, fps,pad_frames
     
     if os.path.isdir(path):
         paths0 = list_images_natural(path)
@@ -169,7 +178,7 @@ def prepare_input_tensor(path: str, scale: float = 4,fps=30, dtype=torch.bfloat1
             count_img+=1
         vid = torch.stack(frames, 0).permute(1,0,2,3).unsqueeze(0)  # 1 C F H W
         fps = 30
-        return vid, tH, tW, F, fps
+        return vid, tH, tW, F, fps,pad_frames
 
     if is_video(path):
         rdr = imageio.get_reader(path)
@@ -225,7 +234,7 @@ def prepare_input_tensor(path: str, scale: float = 4,fps=30, dtype=torch.bfloat1
             except Exception: pass
 
         vid = torch.stack(frames, 0).permute(1,0,2,3).unsqueeze(0)  # 1 C F H W
-        return vid, tH, tW, F, fps
+        return vid, tH, tW, F, fps,pad_frames
 
     raise ValueError(f"Unsupported input: {path}")
 
