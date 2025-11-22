@@ -13,6 +13,7 @@ from ...diffsynth import ModelManager, FlashVSRFullPipeline
 from .utils.utils import Causal_LQ4x_Proj
 import folder_paths
 import torch.nn.functional as F
+from .utils.utils import calculate_frame_adjustment_simple
 
 def tensor2video(frames: torch.Tensor):
     frames = rearrange(frames, "C T H W -> T H W C")
@@ -102,12 +103,20 @@ def tensor2pillist(tensor_in):
     return img_list
 
 def prepare_input_tensor(path: str, scale: int = 4,fps=30, dtype=torch.bfloat16, device='cuda'):
+    pad_frames=0
     if isinstance(path,torch.Tensor):
         total,h0,w0,_ = path.shape
         if total == 1:
             print("got image,repeating to 25 frames")
             path = path.repeat(25, 1, 1, 1) 
             total=25
+        adjustment = calculate_frame_adjustment_simple(total)
+        pad_frames=adjustment['frames_to_remove']
+        print(adjustment['frames_to_add'])
+        if adjustment['frames_to_add'] > 0:
+            additional_frames = path[-1:].repeat(adjustment['frames_to_add'], 1, 1, 1)
+            path = torch.cat([path, additional_frames], dim=0)
+            total = path.shape[0]
         sW, sH, tW, tH = compute_scaled_and_target_dims(w0, h0, scale=scale, multiple=128)
         pil_list=tensor2pillist(path)
         idx = list(range(total)) + [total - 1] * 4
@@ -121,7 +130,7 @@ def prepare_input_tensor(path: str, scale: int = 4,fps=30, dtype=torch.bfloat16,
             frames.append(pil_to_tensor_neg1_1(img_out, dtype, device))
         frames = torch.stack(frames, 0).permute(1,0,2,3).unsqueeze(0)  # 1 C F H W  
         torch.cuda.empty_cache()
-        return frames, tH, tW, F, fps
+        return frames, tH, tW, F, fps,pad_frames
 
     elif os.path.isdir(path):
         paths0 = list_images_natural(path)
@@ -149,7 +158,7 @@ def prepare_input_tensor(path: str, scale: int = 4,fps=30, dtype=torch.bfloat16,
             frames.append(pil_to_tensor_neg1_1(img_out, dtype, device))             
         vid = torch.stack(frames, 0).permute(1,0,2,3).unsqueeze(0)             
         fps = 30
-        return vid, tH, tW, F, fps
+        return vid, tH, tW, F, fps,pad_frames
     elif is_video(path):
         rdr = imageio.get_reader(path)
         first = Image.fromarray(rdr.get_data(0)).convert('RGB')
@@ -211,7 +220,7 @@ def prepare_input_tensor(path: str, scale: int = 4,fps=30, dtype=torch.bfloat16,
                 pass
 
         vid = torch.stack(frames, 0).permute(1,0,2,3).unsqueeze(0)   # 1 C F H W
-        return vid, tH, tW, F, fps
+        return vid, tH, tW, F, fps,pad_frames
     else:
         raise ValueError(f"Unsupported input: {path}")
 
@@ -280,7 +289,7 @@ def run_inference(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_sc
     #total,h0,w0,_ = input.shape
     torch.cuda.empty_cache(); torch.cuda.ipc_collect()
 
-    LQ, th, tw, F, fps = prepare_input_tensor(input, scale=scale, dtype=dtype, device=device)
+    LQ, th, tw, F, fps,pad_frames = prepare_input_tensor(input, scale=scale, dtype=dtype, device=device)
 
     frames = pipe(
         prompt="", negative_prompt="", cfg_scale=cfg_scale, num_inference_steps=step, seed=seed, tiled=tiled,
@@ -349,7 +358,11 @@ def run_inference(pipe,input,seed,scale,kv_ratio=3.0,local_range=9,step=1,cfg_sc
         print("Done.")
         pipe.vae.to('cpu')  
     del LQ
-    torch.cuda.empty_cache()    
+    torch.cuda.empty_cache()
+    if pad_frames>0:
+        print("Remove pad frames",pad_frames,frames.shape)
+        frames =  frames = frames[:, :, :-pad_frames, :, :]  #torch.Size([1, 3, 85, 1024, 768]) -> torch.Size([1, 3, 81, 1024, 768]) if 81 output -4 input + 8
+            
     frames = tensor2video(frames[0])   
     
     if save_vodeo_:
