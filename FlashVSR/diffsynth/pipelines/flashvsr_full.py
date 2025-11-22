@@ -18,7 +18,7 @@ from ..models.wan_video_vae import WanVideoVAE, RMS_norm, CausalConv3d, Upsample
 from ..schedulers.flow_match import FlowMatchScheduler
 from .base import BasePipeline
 from diffusers import AutoencoderKLWan
-
+from safetensors.torch import load_file
 # -----------------------------
 # 基础工具：ADAIN 所需的统计量（保留以备需要；管线默认用 wavelet）
 # -----------------------------
@@ -270,7 +270,7 @@ class FlashVSRFullPipeline(BasePipeline):
         if context_tensor is None:
             if prompt_path is None:
                 raise ValueError("init_cross_kv: 需要提供 prompt_path 或 context_tensor 其一")
-            ctx = torch.load(prompt_path, map_location=self.device,weights_only=False,)
+            ctx = torch.load(prompt_path, map_location=self.device,weights_only=False,) if not prompt_path.endswith('.safetensors') else load_file(prompt_path)
         else:
             ctx = context_tensor
 
@@ -484,7 +484,7 @@ class FlashVSRFullPipeline(BasePipeline):
                 cur_latents = cur_latents - noise_pred_posi
                 latents_total.append(cur_latents)
 
-            latents = torch.cat(latents_total, dim=2)
+            latents = torch.cat(latents_total, dim=2)  #torch.Size([1, 16, 20, 48, 80])
             #self.dit.to("cpu")
             #torch.cuda.empty_cache()
             # Decode
